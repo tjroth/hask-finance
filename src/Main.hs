@@ -10,14 +10,6 @@ import Data.Time
 import Data.Char (toUpper)
 --import Types
 
-yahooURL = "http://real-chart.finance.yahoo.com/table.csv?s=FB&d=1&e=2&f=2015&g=d&a=4&b=18&c=2012&ignore=.csv"
-{--
-withYahooData (ProviderURL url) = do
-    req <- parseUrl url 
-    withManager tlsManagerSettings $ \m ->
-        withHTTP req m $ \resp ->
-            runEffect $ responseBody resp >-> PB.stdout
---}
 
 withYahooData :: Ticker -> Integer -> QuoteType -> IO ()
 withYahooData t nd p = do
@@ -29,14 +21,9 @@ withYahooData t nd p = do
     withHTTP req m $ \resp ->
       runEffect $ responseBody resp >-> PB.stdout
 
-
-
-
 newtype Ticker = Ticker String deriving (Show, Read, Eq)
 
 newtype ProviderURL = ProviderURL String deriving (Show, Read, Eq)
-
-
 
 data TimeRange = TimeRange { startT :: UTCTime
                            , endT   :: UTCTime }
@@ -45,7 +32,6 @@ data TimeRange = TimeRange { startT :: UTCTime
 data QuoteType = Daily | Weekly | Monthly
 
 data QuoteProvider = Yahoo | Google
-
 
 data Quote = Quote { date :: !String
                    , openPrice :: !Double
