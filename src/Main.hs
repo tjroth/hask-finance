@@ -2,46 +2,50 @@
 
 module Main where
 
+import Control.Applicative ((<$>), (<*>))
 import Pipes
 import Pipes.HTTP
+import Data.Either (rights)
 import qualified Pipes.ByteString as PB  -- from `pipes-bytestring`
---import Data.Csv
+import qualified Pipes.Prelude as PP
+import Pipes.Csv (decode, HasHeader(..), FromRecord(..), (.:), (.!))
 import Data.Time
 import Data.Char (toUpper)
---import Types
+import qualified Data.Vector as V
+import Data.Vector (length)
+import Types
 
 
-withYahooData :: Ticker -> Integer -> QuoteType -> IO ()
-withYahooData t nd p = do
+withYahooData :: Show b => Ticker
+                 -- ^ The ticker symbol (eg Ticker "AAPL")
+                 -> Integer
+                 -- ^ How many days of data
+                 -> QuoteType
+                 -- ^ Daily, Weekly or Monthly
+                 -> Pipe Quote b IO ()
+                 -- ^ Study to run on the data
+                 -> IO ()
+withYahooData t nd p study = do
   ct <- getCurrentTime
   let tr = mkTimeRange ct nd
   let (ProviderURL url) = mkURL Yahoo t p tr
   req <- parseUrl url 
   withManager tlsManagerSettings $ \m ->
     withHTTP req m $ \resp ->
-      runEffect $ responseBody resp >-> PB.stdout
+      runEffect $ quoteProducer resp  >-> quoteFilter >-> study >-> PP.print
+      where
+        quoteProducer resp = decode HasHeader (responseBody resp) :: Producer (Either String Quote) IO ()
 
-newtype Ticker = Ticker String deriving (Show, Read, Eq)
+lows :: Monad m => Pipe Quote Double m r
+lows = PP.map lowPrice
 
-newtype ProviderURL = ProviderURL String deriving (Show, Read, Eq)
-
-data TimeRange = TimeRange { startT :: UTCTime
-                           , endT   :: UTCTime }
-                           deriving (Show, Eq, Ord)
-
-data QuoteType = Daily | Weekly | Monthly
-
-data QuoteProvider = Yahoo | Google
-
-data Quote = Quote { date :: !String
-                   , openPrice :: !Double
-                   , highPrice :: !Double
-                   , lowPrice :: !Double
-                   , closePrice :: !Double
-                   , volume :: !Integer
-                   , adjClose :: !Double } deriving (Show, Eq, Ord, Read)
-
-
+quoteFilter :: Monad m => Pipe (Either String Quote) Quote m r
+quoteFilter = go
+  where go = do
+          x <- await
+          case x of
+           Left e -> go
+           Right v -> yield v >> go
 
 mkTimeRange :: UTCTime -> Integer -> TimeRange
 mkTimeRange et numDays = TimeRange st et
@@ -70,7 +74,7 @@ mkURL Yahoo (Ticker s) p tr = ProviderURL $ concat ["http://ichart.finance.yahoo
 
 
 
-{--
+
 instance FromRecord Quote where
      parseRecord v
          | V.length v == 7 = Quote <$>
@@ -85,7 +89,7 @@ instance FromRecord Quote where
 
 mkQuote d o h l c v ac = Quote d o h l c v ac
 
-
+{--
 -- Convenience Functions
 -- ---------------------
 
