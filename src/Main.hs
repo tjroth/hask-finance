@@ -91,28 +91,3 @@ volumes = PP.map volume
 
 --mkQuote d o h l c v ac = Quote d o h l c v ac
 
-{--
--- Convenience Functions
--- ---------------------
-
-opens :: V.Vector Quote -> V.Vector Double
-opens = V.map openPrice
-
-highs :: V.Vector Quote -> V.Vector Double
-highs = V.map highPrice
-
-lows :: V.Vector Quote -> V.Vector Double
-lows = V.map lowPrice
-
-closes :: V.Vector Quote -> V.Vector Double
-closes = V.map closePrice
-
-volumes :: V.Vector Quote -> V.Vector Integer
-volumes = V.map volume
-
-highestHigh :: V.Vector Quote -> Double
-highestHigh vs = V.foldl1 max $ highs vs
-
-lowestLow :: V.Vector Quote -> Double
-lowestLow vs = V.foldl1 min $ lows vs
---}
