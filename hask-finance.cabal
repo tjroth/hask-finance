@@ -26,7 +26,9 @@ library
                        pipes-csv >= 1.4.0,
                        cassava >= 0.4.2.1,
                        time >= 1.4.2,
-                       vector >= 0.10.9.1
+                       old-locale >= 1.0.0.6,
+                       vector >= 0.10.9.1,
+                       bytestring >= 0.10.4.0
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options: -O2 -Wall -fwarn-tabs

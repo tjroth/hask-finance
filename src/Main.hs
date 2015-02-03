@@ -2,7 +2,7 @@
 
 module Main where
 
-import Control.Applicative ((<$>), (<*>))
+
 import Pipes
 import Pipes.HTTP
 import Data.Either (rights)
@@ -11,8 +11,6 @@ import qualified Pipes.Prelude as PP
 import Pipes.Csv (decode, HasHeader(..), FromRecord(..), (.:), (.!))
 import Data.Time
 import Data.Char (toUpper)
-import qualified Data.Vector as V
-import Data.Vector (length)
 import Types
 
 
@@ -32,12 +30,9 @@ withYahooData t nd p study = do
   req <- parseUrl url 
   withManager tlsManagerSettings $ \m ->
     withHTTP req m $ \resp ->
-      runEffect $ quoteProducer resp  >-> quoteFilter >-> study >-> PP.print
+      runEffect $ quoteProducer resp >-> quoteFilter >-> study >-> PP.print
       where
         quoteProducer resp = decode HasHeader (responseBody resp) :: Producer (Either String Quote) IO ()
-
-lows :: Monad m => Pipe Quote Double m r
-lows = PP.map lowPrice
 
 quoteFilter :: Monad m => Pipe (Either String Quote) Quote m r
 quoteFilter = go
@@ -72,22 +67,29 @@ mkURL Yahoo (Ticker s) p tr = ProviderURL $ concat ["http://ichart.finance.yahoo
         pchar Monthly = "&g=m"
 
 
+-------------------------------------------------------
+-- Convenience Pipes for Quote elements
+        
+dates :: Monad m => Pipe Quote UTCTime m r
+dates = PP.map date
+
+opens :: Monad m => Pipe Quote Double m r
+opens = PP.map openPrice
+
+highs :: Monad m => Pipe Quote Double m r
+highs = PP.map highPrice
+        
+lows :: Monad m => Pipe Quote Double m r
+lows = PP.map lowPrice
+        
+closes :: Monad m => Pipe Quote Double m r
+closes = PP.map closePrice        
+
+volumes :: Monad m => Pipe Quote Integer m r
+volumes = PP.map volume
 
 
-
-instance FromRecord Quote where
-     parseRecord v
-         | V.length v == 7 = Quote <$>
-                           v .! 0 <*>
-                           v .! 1 <*>
-                           v .! 2 <*>
-                           v .! 3 <*>
-                           v .! 4 <*>
-                           v .! 5 <*>
-                           v .! 6
-         | otherwise     = mzero
-
-mkQuote d o h l c v ac = Quote d o h l c v ac
+--mkQuote d o h l c v ac = Quote d o h l c v ac
 
 {--
 -- Convenience Functions
