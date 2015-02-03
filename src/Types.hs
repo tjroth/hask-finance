@@ -5,13 +5,12 @@ module Types where
 import Control.Monad (mzero)
 import Control.Applicative ((<$>), (<*>), pure)
 import Data.Time (UTCTime(..))
-import Data.Time.Format (readTime)
+import Data.Time.Format (parseTime)
 import Data.ByteString.Char8 (unpack)
 import System.Locale
-import Pipes.Csv (FromField(..), FromRecord(..), (.:), (.!))
-import Data.Csv (Parser)
+import Pipes.Csv (FromField(..), FromRecord(..), (.!))
 import qualified Data.Vector as V
-import Data.Vector (length)
+
 
 newtype Ticker = Ticker String
                deriving (Show, Read, Eq)
@@ -35,8 +34,10 @@ data Quote = Quote { date :: !UTCTime
                    , volume :: !Integer
                    , adjClose :: !Double } deriving (Show, Eq, Ord, Read)
 
-instance FromField UTCTime where
-  parseField s = pure $ readTime defaultTimeLocale "%Y-%m-%d" $ unpack s :: Parser UTCTime
+instance FromField UTCTime where 
+  parseField s = case (parseTime defaultTimeLocale "%Y-%m-%d" $ unpack s ) of
+                  Just t  -> pure t
+                  Nothing -> mzero
 
 instance FromRecord Quote where
      parseRecord v
