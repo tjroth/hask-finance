@@ -2,7 +2,7 @@
 
 module Main where
 
-
+import System.IO
 import Pipes
 import Pipes.HTTP
 import Data.Either (rights)
@@ -11,28 +11,70 @@ import qualified Pipes.Prelude as PP
 import Pipes.Csv (decode, HasHeader(..), FromRecord(..), (.:), (.!))
 import Data.Time
 import Data.Char (toUpper)
+import Data.Either (rights)
+import Data.List (tails)
+import qualified Data.Vector as V
+import qualified Data.Csv as CSV
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import Types
+import GHC.IO.Handle (hClose)
 
+import Control.Foldl (Fold(Fold), purely)
+import qualified Control.Foldl as L
+import Data.Sequence (Seq, (|>))
+import qualified Data.Sequence as S
 
-withYahooData :: Show b => Ticker
-                 -- ^ The ticker symbol (eg Ticker "AAPL")
-                 -> Integer
-                 -- ^ How many days of data
-                 -> QuoteType
-                 -- ^ Daily, Weekly or Monthly
-                 -> Pipe Quote b IO ()
-                 -- ^ Study to run on the data
-                 -> IO ()
-withYahooData t nd p study = do
+quoteDataFromProvider :: QuoteProvider  -- todo validate filepath ? directoryExists
+                      -> Ticker
+                      -- ^ The ticker symbol (eg Ticker "AAPL")
+                      -> Integer
+                      -- ^ How many days of data
+                      -> QuoteType
+                      -- ^ Daily, Weekly or Monthly
+                      -> IO (V.Vector Quote)
+quoteDataFromProvider qp t nd p = do
   ct <- getCurrentTime
   let tr = mkTimeRange ct nd
-  let (ProviderURL url) = mkURL Yahoo t p tr
+  let (ProviderURL url) = mkURL qp t p tr
   req <- parseUrl url 
   withManager tlsManagerSettings $ \m ->
-    withHTTP req m $ \resp ->
-      runEffect $ quoteProducer resp >-> quoteFilter >-> study >-> PP.print
+    withHTTP req m $ \resp -> do
+      vs <- PP.toListM $ quoteProducer resp
+      return $ V.fromList $ rights $ vs
       where
-        quoteProducer resp = decode HasHeader (responseBody resp) :: Producer (Either String Quote) IO ()
+        quoteProducer resp = decode HasHeader (responseBody resp) -- :: Producer (Either String Quote) IO ()
+
+
+quoteDataFromFile :: FilePath -> IO (V.Vector Quote)
+quoteDataFromFile f = do
+  withFile f ReadMode $ \hIn -> do
+    bs <- BL.hGetContents hIn
+    let qs = CSV.decode HasHeader bs :: Either String (V.Vector Quote)
+    case qs of
+     Right vs -> return vs 
+     Left e -> return V.empty 
+
+  
+downloadDataFromServer :: QuoteProvider  -- todo validate filepath ? directoryExists
+                       -> Ticker 
+                       -> QuoteType 
+                       -> Integer 
+                       -> FilePath
+                       -> IO ()
+downloadDataFromServer qp t@(Ticker s) p nds dir = do
+  ct <- getCurrentTime
+  let tr = mkTimeRange ct nds
+  let (ProviderURL url) = mkURL qp t p tr 
+  req <- parseUrl $ url
+  withManager defaultManagerSettings $ \m ->
+    withHTTP req m $ \resp ->
+      withFile (dir ++ (map toUpper s) ++ ".csv") WriteMode $ \hOut -> do
+      runEffect $ for (responseBody resp) (liftIO . BS.hPutStr hOut)
+      
+
+s :: Monad m => Pipe Quote [Quote] m ()
+s = PP.scan (\acc v -> v:acc) [] id
 
 quoteFilter :: Monad m => Pipe (Either String Quote) Quote m r
 quoteFilter = go
@@ -67,27 +109,18 @@ mkURL Yahoo (Ticker s) p tr = ProviderURL $ concat ["http://ichart.finance.yahoo
         pchar Monthly = "&g=m"
 
 
--------------------------------------------------------
--- Convenience Pipes for Quote elements
-        
-dates :: Monad m => Pipe Quote UTCTime m r
-dates = PP.map date
-
-opens :: Monad m => Pipe Quote Double m r
-opens = PP.map openPrice
-
-highs :: Monad m => Pipe Quote Double m r
-highs = PP.map highPrice
-        
-lows :: Monad m => Pipe Quote Double m r
-lows = PP.map lowPrice
-        
-closes :: Monad m => Pipe Quote Double m r
-closes = PP.map closePrice        
-
-volumes :: Monad m => Pipe Quote Integer m r
-volumes = PP.map volume
 
 
---mkQuote d o h l c v ac = Quote d o h l c v ac
 
+{--
+withFileData :: Show b => String -> Pipe [Quote] b IO () -> IO [Either String Quote] --()
+withFileData f study= do
+  withFile f ReadMode $ \hIn -> do
+    qp <- PP.toListM $ quoteProducer hIn
+    return qp
+
+    {--let dataProducer = each . reverse . tails . rights $ qp
+    runEffect $ dataProducer >-> study >-> PP.print --}
+    where
+      quoteProducer hIn = (decode HasHeader (PB.fromHandle hIn) :: Producer (Either String Quote) IO ()) 
+--}
