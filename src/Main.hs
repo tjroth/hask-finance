@@ -4,7 +4,7 @@ module Main where
 
 import System.IO
 import Control.Monad (forM)
-import Control.Exception (IOException, try)
+import Control.Exception (IOException, Exception, try)
 import Pipes
 import Pipes.HTTP
 import Data.Either (rights)
@@ -36,12 +36,14 @@ quoteDataFromProvider qp t nd p = do
   let tr = mkTimeRange ct nd
   let (ProviderURL url) = mkURL qp t p tr
   req <- parseUrl url 
-  withManager tlsManagerSettings $ \m ->
-    withHTTP req m $ \resp -> do
-      vs <- PP.toListM $ quoteProducer resp
-      return $ V.fromList $ rights $ vs
-      where
-        quoteProducer resp = decode HasHeader (responseBody resp) -- :: Producer (Either String Quote) IO ()
+  e <- try (withManager tlsManagerSettings $ \m ->
+             withHTTP req m $ \resp -> do
+               vs <- PP.toListM $ decode HasHeader (responseBody resp)
+               return $ V.fromList $ rights $ vs)
+  case e of
+       Left (e :: HttpException) -> putStrLn "Server Error or Invalid Symbol" >> return V.empty 
+       Right v -> return v
+
 
 -----------------------------------------------------------------------------------
 -- Loads historical price data from file; all data is loaded
@@ -49,13 +51,12 @@ quoteDataFromProvider qp t nd p = do
 quoteDataFromFile :: FilePath -> IO (V.Vector Quote) 
 quoteDataFromFile f = do
   e <- try (withFile f ReadMode $ \hIn -> do
-               qp <- PP.toListM $ quoteProducer hIn
+               qp <- PP.toListM $ decode HasHeader (PB.fromHandle hIn) 
                return $ V.fromList . rights $ qp)
   case e of
-   Left (e :: IOException) -> return V.empty
-   Right v -> return v --case v of
-  where
-    quoteProducer hIn = (decode HasHeader (PB.fromHandle hIn) :: Producer (Either String Quote) IO ())
+   Left (e :: IOException) -> (putStrLn $ "IO Error for path: " ++ f)  >> return V.empty
+   Right v -> return v 
+
     
 -----------------------------------------------------------------------------------
 -- Download historical price data and save to file; currently only supports Yahoo data
