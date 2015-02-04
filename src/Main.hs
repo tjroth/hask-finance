@@ -1,12 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
-
+{-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
 import System.IO
+import Control.Monad (forM)
+import Control.Exception (IOException, try)
 import Pipes
 import Pipes.HTTP
 import Data.Either (rights)
 import qualified Pipes.Prelude as PP
+import qualified Pipes.ByteString as PB
 import Pipes.Csv (decode, HasHeader(..)) 
 import Data.Time
 import Data.Char (toUpper)
@@ -42,16 +45,18 @@ quoteDataFromProvider qp t nd p = do
 
 -----------------------------------------------------------------------------------
 -- Loads historical price data from file; all data is loaded
-        
-quoteDataFromFile :: FilePath -> IO (V.Vector Quote)
-quoteDataFromFile f = do
-  withFile f ReadMode $ \hIn -> do
-    bs <- BL.hGetContents hIn
-    let qs = CSV.decode HasHeader bs :: Either String (V.Vector Quote)
-    case qs of
-     Right vs -> return vs 
-     Left _ -> return V.empty 
 
+quoteDataFromFile :: FilePath -> IO (V.Vector Quote) 
+quoteDataFromFile f = do
+  e <- try (withFile f ReadMode $ \hIn -> do
+               qp <- PP.toListM $ quoteProducer hIn
+               return $ V.fromList . rights $ qp)
+  case e of
+   Left (e :: IOException) -> return V.empty
+   Right v -> return v --case v of
+  where
+    quoteProducer hIn = (decode HasHeader (PB.fromHandle hIn) :: Producer (Either String Quote) IO ())
+    
 -----------------------------------------------------------------------------------
 -- Download historical price data and save to file; currently only supports Yahoo data
      
@@ -117,20 +122,17 @@ dates :: V.Vector Quote -> V.Vector UTCTime
 dates = V.map date
 
 
+-------------------------------------------------
+-- Filter Analysis
+
+filterAnalysis :: FilePath -> [(V.Vector Quote -> Bool)] -> IO Bool
+filterAnalysis fp fns = do
+  dataSet <- quoteDataFromFile fp
+  return $ and $ map (\fn -> fn dataSet) fns
 
 
-{--
-withFileData :: Show b => String -> Pipe [Quote] b IO () -> IO [Either String Quote] --()
-withFileData f study= do
-  withFile f ReadMode $ \hIn -> do
-    qp <- PP.toListM $ quoteProducer hIn
-    return qp
 
-    {--let dataProducer = each . reverse . tails . rights $ qp
-    runEffect $ dataProducer >-> study >-> PP.print --}
-    where
-      quoteProducer hIn = (decode HasHeader (PB.fromHandle hIn) :: Producer (Either String Quote) IO ()) 
---}
+
 
 {--
 quoteFilter :: Monad m => Pipe (Either String Quote) Quote m r
@@ -139,5 +141,20 @@ quoteFilter = go
           x <- await
           case x of
            Left _ -> go
-           Right v -> yield v >> go
+Right v -> yield v >> go
+        
+quoteDataFromFile :: FilePath -> IO (V.Vector Quote)
+quoteDataFromFile f = do
+  e <- try (withFile f ReadMode $ \hIn -> do
+               hSetBinaryMode hIn True
+               bs <- BL.hGetContents hIn
+               let qs = CSV.decode HasHeader bs :: Either String (V.Vector Quote)
+               return qs)
+  case e of
+   Left (e :: IOException) -> return V.empty
+   Right v -> case v of
+     Right vs -> return vs
+     Left _ -> return V.empty
+
+
 --}
