@@ -109,6 +109,27 @@ mkURL Yahoo (Ticker s) p tr = ProviderURL $ concat ["http://ichart.finance.yahoo
         pchar Monthly = "&g=m"
 
 
+-----------------------------------------------
+--Convenience functions
+        
+opens :: V.Vector Quote -> V.Vector Double
+opens = V.map openPrice
+        
+highs :: V.Vector Quote -> V.Vector Double
+highs = V.map highPrice
+        
+lows :: V.Vector Quote -> V.Vector Double
+lows = V.map lowPrice
+        
+closes :: V.Vector Quote -> V.Vector Double
+closes = V.map closePrice
+        
+volumes :: V.Vector Quote -> V.Vector Integer
+volumes = V.map volume
+        
+dates :: V.Vector Quote -> V.Vector UTCTime
+dates = V.map date
+
 
 
 
