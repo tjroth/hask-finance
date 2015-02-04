@@ -4,6 +4,7 @@ module Main where
 
 import System.IO
 import Control.Monad (forM)
+import Control.Applicative ((<$>), (<*>), liftA2)
 import Control.Exception (IOException, Exception, try)
 import Pipes
 import Pipes.HTTP
@@ -13,6 +14,7 @@ import qualified Pipes.ByteString as PB
 import Pipes.Csv (decode, HasHeader(..)) 
 import Data.Time
 import Data.Char (toUpper)
+import Data.Maybe (catMaybes)
 import qualified Data.Vector as V
 import qualified Data.Csv as CSV
 import qualified Data.ByteString as BS
@@ -23,14 +25,15 @@ import Types
 -----------------------------------------------------------------------------------
 -- Retrieves historical price data from server; currently only supports Yahoo data
 
-quoteDataFromProvider :: QuoteProvider 
-                      -> Ticker
-                      -- ^ The ticker symbol (eg Ticker "AAPL")
-                      -> Integer
-                      -- ^ How many days of data
-                      -> QuoteType
-                      -- ^ Daily, Weekly or Monthly
-                      -> IO (V.Vector Quote)
+quoteDataFromProvider :: QuoteProvider
+                         -- ^ Historical quote provider: Yahoo or Google
+                         -> Ticker
+                         -- ^ The ticker symbol (eg Ticker "AAPL")
+                         -> Integer
+                         -- ^ How many days of data
+                         -> QuoteType
+                         -- ^ Daily, Weekly or Monthly
+                         -> IO (V.Vector Quote)
 quoteDataFromProvider qp t nd p = do
   ct <- getCurrentTime
   let tr = mkTimeRange ct nd
@@ -82,7 +85,6 @@ mkTimeRange et numDays = TimeRange st et
   where
     st = UTCTime (addDays (negate $ abs numDays) (utctDay et)) (utctDayTime et)
 
-
 mkURL :: QuoteProvider -> Ticker -> QuoteType -> TimeRange -> ProviderURL
 mkURL Yahoo (Ticker s) qType tRange = ProviderURL $ concat ["http://ichart.finance.yahoo.com/table.csv?s="
                                                    , map toUpper s
@@ -124,14 +126,36 @@ dates = V.map date
 
 
 -------------------------------------------------
+-- Utility Functions
+
+(<>) = (V.!?)
+
+-------------------------------------------------
 -- Filter Analysis
 
-filterAnalysis :: FilePath -> [(V.Vector Quote -> Bool)] -> IO Bool
-filterAnalysis fp fns = do
-  dataSet <- quoteDataFromFile fp
-  return $ and $ map (\fn -> fn dataSet) fns
+filterAnalysis :: V.Vector Quote -> [(V.Vector Quote -> Maybe Bool)] -> IO Bool
+filterAnalysis dataSet fns = do
+  return $ and . catMaybes . map (\fn -> fn dataSet) $ fns
 
 
+
+
+-------------------------------------------------
+-- Sample filters/analyses
+bigBar vq = do
+  cb <- vq <> 0
+  pb <- vq <> 1
+  let hlc = highPrice cb - lowPrice pb
+  let hlp = highPrice pb - lowPrice pb
+  return $ (hlc / hlp >= 2)
+
+bigVolume vq = do
+  cv <- fmap volume $ vq <> 0
+  return $ cv > 100000000
+
+  
+-------------------------------------------------
+-- Technical Indicators/Functions
 
 
 
